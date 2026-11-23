@@ -5,6 +5,42 @@ app = Flask(__name__)
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15"})
 
+HTML_UI = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1080p Video Downloader</title>
+<style>
+  body { font-family: sans-serif; background: #111; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 90vh; margin: 0; padding: 20px; }
+  .box { width: 100%; max-width: 400px; background: #1e1e1e; padding: 20px; border-radius: 14px; box-sizing: border-box; text-align: center; }
+  input { width: 100%; padding: 14px; border-radius: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; font-size: 16px; box-sizing: border-box; margin-bottom: 12px; }
+  button { width: 100%; padding: 14px; border-radius: 8px; border: none; background: #00c853; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
+  .paste-btn { background: #2979ff; color: #fff; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h3>1080p HD Downloader</h3>
+    <form id="dlForm" action="/api/get_video" method="get">
+      <input type="text" id="urlInput" name="url" placeholder="Paste Douyin / Xigua link..." required>
+      <button type="button" class="paste-btn" onclick="pasteAndGo()">Paste & Download</button>
+      <button type="submit">Download Video</button>
+    </form>
+  </div>
+  <script>
+    async function pasteAndGo() {
+      try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById('urlInput').value = text;
+        if (text) document.getElementById('dlForm').submit();
+      } catch (e) {
+        alert('Clipboard permission allow karein ya box mein paste karke Download dabayein.');
+      }
+    }
+  </script>
+</body>
+</html>"""
+
 def extract_url(text):
     m = re.search(r"https?://[^\s]+", text)
     return m.group(0) if m else text.strip()
@@ -23,7 +59,7 @@ def get_douyin_1080p(share_url):
 
 @app.route("/")
 def home():
-    return "Online 1080p Full HD Video API Running!"
+    return HTML_UI
 
 @app.route("/api/get_video")
 def get_video():
