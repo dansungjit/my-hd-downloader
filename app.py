@@ -1,4 +1,4 @@
-import os, re, subprocess, tempfile, requests
+import os, re, shutil, subprocess, tempfile, requests
 from flask import Flask, request, send_file, after_this_request
 
 app = Flask(__name__)
@@ -33,38 +33,46 @@ def get_video():
     raw_mp4 = os.path.join(tmp_dir, "raw.mp4")
     final_mp4 = os.path.join(tmp_dir, "fullhd.mp4")
 
-    direct_url = get_douyin_1080p(url)
-    downloaded = False
-    if direct_url:
-        r = SESSION.get(direct_url, stream=True, timeout=20)
-        if r.status_code == 200:
-            with open(raw_mp4, "wb") as f:
-                for chunk in r.iter_content(1024 * 256):
-                    f.write(chunk)
-            downloaded = os.path.exists(raw_mp4) and os.path.getsize(raw_mp4) > 50000
+    try:
+        direct_url = get_douyin_1080p(url)
+        downloaded = False
+        if direct_url:
+            r = SESSION.get(direct_url, stream=True, timeout=20)
+            if r.status_code == 200:
+                with open(raw_mp4, "wb") as f:
+                    for chunk in r.iter_content(1024 * 256):
+                        f.write(chunk)
+                downloaded = os.path.exists(raw_mp4) and os.path.getsize(raw_mp4) > 50000
 
-    if not downloaded:
+        if not downloaded:
+            subprocess.run([
+                "yt-dlp", "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
+                "-o", raw_mp4, url
+            ], check=True)
+
         subprocess.run([
-            "yt-dlp", "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
-            "-o", raw_mp4, url
-        ], check=True)
+            "ffmpeg", "-y", "-threads", "1", "-i", raw_mp4,
+            "-vf", "scale=1080:1920:flags=bilinear",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+            "-threads", "1", "-max_muxing_queue_size", "1024",
+            "-c:a", "copy", final_mp4
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    subprocess.run([
-        "ffmpeg", "-y", "-i", raw_mp4,
-        "-vf", "scale=1080:1920:flags=bilinear",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
-        "-c:a", "copy", final_mp4
-    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(raw_mp4):
+            os.remove(raw_mp4)
 
-    @after_this_request
-    def cleanup(response):
-        for f in (raw_mp4, final_mp4):
-            if os.path.exists(f):
-                os.remove(f)
-        return response
+        @after_this_request
+        def cleanup(response):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return response
 
-    return send_file(final_mp4, mimetype="video/mp4", as_attachment=True, download_name="FullHD_1080p.mp4")
+        return send_file(final_mp4, mimetype="video/mp4", as_attachment=True, download_name="FullHD_1080p.mp4")
+
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return str(e), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
     app.run(host="0.0.0.0", port=port)
+    
