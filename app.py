@@ -13,10 +13,12 @@ def get_douyin_1080p(share_url):
     res = SESSION.get(share_url, allow_redirects=True, timeout=8)
     m = re.search(r"/video/(\d+)", res.url)
     if m:
-        html = SESSION.get(f"https://www.iesdouyin.com/share/video/{m.group(1)}/", timeout=8).text
-        uri = re.search(r'"uri":"([a-zA-Z0-9_-]+)"', html)
-        if uri:
-            return f"https://aweme.snssdk.com/aweme/v1/play/?video_id={uri.group(1)}&ratio=1080p&line=0"
+        vid = m.group(1)
+        for endpoint in (f"https://www.iesdouyin.com/share/video/{vid}/", f"https://www.iesdouyin.com/xg/video/{vid}/"):
+            html = SESSION.get(endpoint, timeout=8).text
+            uri = re.search(r'"uri":"([a-zA-Z0-9_-]+)"', html)
+            if uri:
+                return f"https://aweme.snssdk.com/aweme/v1/play/?video_id={uri.group(1)}&ratio=1080p&line=0"
     return None
 
 @app.route("/")
@@ -30,7 +32,6 @@ def get_video():
         return "Missing url", 400
     url = extract_url(raw_url)
     tmp_dir = tempfile.mkdtemp()
-    raw_mp4 = os.path.join(tmp_dir, "raw.mp4")
     final_mp4 = os.path.join(tmp_dir, "fullhd.mp4")
 
     try:
@@ -39,27 +40,16 @@ def get_video():
         if direct_url:
             r = SESSION.get(direct_url, stream=True, timeout=20)
             if r.status_code == 200:
-                with open(raw_mp4, "wb") as f:
-                    for chunk in r.iter_content(1024 * 256):
+                with open(final_mp4, "wb") as f:
+                    for chunk in r.iter_content(1024 * 512):
                         f.write(chunk)
-                downloaded = os.path.exists(raw_mp4) and os.path.getsize(raw_mp4) > 50000
+                downloaded = os.path.exists(final_mp4) and os.path.getsize(final_mp4) > 50000
 
         if not downloaded:
             subprocess.run([
-                "yt-dlp", "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
-                "-o", raw_mp4, url
+                "yt-dlp", "-f", "best[height<=1080][ext=mp4]/bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
+                "--merge-output-format", "mp4", "-o", final_mp4, url
             ], check=True)
-
-        subprocess.run([
-            "ffmpeg", "-y", "-threads", "1", "-i", raw_mp4,
-            "-vf", "scale=1080:1920:flags=bilinear",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
-            "-threads", "1", "-max_muxing_queue_size", "1024",
-            "-c:a", "copy", final_mp4
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-        if os.path.exists(raw_mp4):
-            os.remove(raw_mp4)
 
         @after_this_request
         def cleanup(response):
